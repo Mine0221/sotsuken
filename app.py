@@ -305,9 +305,9 @@ def create_student():
     required = ["student_id", "name", "email"]
     for key in required:
         if key not in data:
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": f"{key}は必須です"}}), 400
+            raise ValidationError(f"{key}は必須です")
     if Student.query.filter_by(student_id=data["student_id"]).first():
-        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "student_idは既に存在します"}}), 400
+        raise ValidationError("student_idは既に存在します")
     new_student = Student(
         student_id=data["student_id"],
         name=data["name"],
@@ -324,7 +324,8 @@ def create_student():
 def update_student(student_id):
     student = Student.query.filter_by(student_id=student_id).first()
     if not student:
-        return jsonify({"error": {"code": "NOT_FOUND", "message": "学生が見つかりません"}}), 404
+        from werkzeug.exceptions import NotFound
+        raise NotFound("学生が見つかりません")
     data = request.json
     for key in ["name", "email", "gpa", "assigned_lab"]:
         if key in data:
@@ -337,7 +338,8 @@ def update_student(student_id):
 def delete_student(student_id):
     student = Student.query.filter_by(student_id=student_id).first()
     if not student:
-        return jsonify({"error": {"code": "NOT_FOUND", "message": "学生が見つかりません"}}), 404
+        from werkzeug.exceptions import NotFound
+        raise NotFound("学生が見つかりません")
     db.session.delete(student)
     db.session.commit()
     return jsonify({"message": f"{student.name} を削除しました"})
@@ -385,7 +387,8 @@ def get_student_matching_history(student_id):
 def get_student_detail(student_id):
     student = Student.query.filter_by(student_id=student_id).first()
     if not student:
-        return jsonify({"error": {"code": "NOT_FOUND", "message": "学生が見つかりません"}}), 404
+        from werkzeug.exceptions import NotFound
+        raise NotFound("学生が見つかりません")
     return jsonify({
         "student_id": student.student_id,
         "name": student.name,
