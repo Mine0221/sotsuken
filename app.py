@@ -4,6 +4,7 @@ from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from werkzeug.exceptions import BadRequest
 # 認証用
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import datetime
@@ -26,6 +27,10 @@ migrate = Migrate(app, db)
 CORS(app)
 # JWT初期化
 jwt = JWTManager(app)
+
+# 独自バリデーション例外
+class ValidationError(Exception):
+    pass
 
 # --- DBモデル定義 ---
 class User(db.Model):
@@ -103,7 +108,28 @@ preferences = {
         {"lab_id": "LAB01", "rank": 1},
         {"lab_id": "LAB02", "rank": 2}
     ]
+
 }
+
+# ===== 共通エラーハンドラ（113行目） =====
+@app.errorhandler(BadRequest)
+def handle_bad_request(e):
+    return jsonify({"error": "Bad Request", "message": str(e)}), 400
+
+class ValidationError(Exception):
+    pass
+
+@app.errorhandler(ValidationError)
+def handle_validation_error(e):
+    return jsonify({"error": "Validation Error", "message": str(e)}), 400
+
+@app.errorhandler(404)
+def handle_not_found(e):
+    return jsonify({"error": "Not Found", "message": str(e)}), 404
+
+@app.errorhandler(500)
+def handle_internal_error(e):
+    return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
 
 
@@ -245,6 +271,7 @@ def delete_laboratory(lab_id):
 
 
 
+
 # --- 学生API ---
 # 学生一覧取得API（DB連携）
 @app.route('/api/v1/students', methods=['GET'])
@@ -270,6 +297,9 @@ def get_students():
         "per_page": per_page,
         "students": students_list
     })
+
+
+
 
 # --- 学生新規登録API ---
 @app.route('/api/v1/students', methods=['POST'])
