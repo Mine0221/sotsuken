@@ -175,6 +175,8 @@ def admin_only_api():
 @role_required(['student'])
 def student_only_api():
     return jsonify({'message': '学生専用APIです'})
+
+#--- 研究室一覧取得API ---
 @app.route('/api/v1/laboratories', methods=['GET'])
 def get_laboratories():
     """研究室一覧取得API
@@ -217,6 +219,50 @@ def get_laboratories():
         "per_page": per_page,
         "labs": labs_list
     })
+
+# --- パスワードリセットAPI ---
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import decode_token
+
+# パスワードリセットリクエストAPI
+@app.route('/api/v1/auth/request_password_reset', methods=['POST'])
+def request_password_reset():
+    data = request.json
+    email = data.get('email')
+    if not email:
+        raise ValidationError('emailは必須です')
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        from werkzeug.exceptions import NotFound
+        raise NotFound('ユーザーが見つかりません')
+    # JWTトークンをリセット用に発行（有効期限10分）
+    reset_token = create_access_token(identity={'user_id': user.id, 'email': user.email}, expires_delta=datetime.timedelta(minutes=10))
+    # 本来はメール送信だが、今回はAPIで返却
+    return jsonify({'reset_token': reset_token, 'message': 'パスワードリセット用トークンを発行しました'})
+
+# パスワードリセット実行API
+@app.route('/api/v1/auth/reset_password', methods=['POST'])
+def reset_password():
+    data = request.json
+    reset_token = data.get('reset_token')
+    new_password = data.get('new_password')
+    if not reset_token or not new_password:
+        raise ValidationError('reset_tokenとnew_passwordは必須です')
+    try:
+        decoded = decode_token(reset_token)
+        identity = decoded['sub'] if 'sub' in decoded else decoded['identity']
+        user_id = identity['user_id'] if isinstance(identity, dict) else identity
+    except Exception:
+        from werkzeug.exceptions import Unauthorized
+        raise Unauthorized('トークンが不正または期限切れです')
+    user = User.query.filter_by(id=user_id).first()
+    if not user:
+        from werkzeug.exceptions import NotFound
+        raise NotFound('ユーザーが見つかりません')
+    # パスワードハッシュ化（本番は強度の高い方式を推奨）
+    user.password = generate_password_hash(new_password)
+    db.session.commit()
+    return jsonify({'message': 'パスワードをリセットしました'})
 
 # --- 研究室API ---
 # 研究室新規作成API（DB連携）
