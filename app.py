@@ -417,7 +417,7 @@ def set_preferences():
     student_id = data.get("student_id")
     prefs = data.get("preferences")
     if not student_id or not isinstance(prefs, list):
-        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "student_idとpreferencesは必須です"}}), 400
+        raise ValidationError("student_idとpreferencesは必須です")
     # 既存の希望を削除
     Preference.query.filter_by(student_id=student_id).delete()
     # 新しい希望を追加
@@ -438,6 +438,10 @@ def run_matching():
     # --- DBからデータ取得 ---
     students = Student.query.all()
     laboratories = Laboratory.query.all()
+    if not students:
+        raise ValidationError("学生データが存在しません")
+    if not laboratories:
+        raise ValidationError("研究室データが存在しません")
     lab_dict = {lab.lab_id: lab for lab in laboratories}
     # 各研究室の割当学生リストを初期化
     lab_assignments = {lab.lab_id: [] for lab in laboratories}
