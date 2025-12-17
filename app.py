@@ -132,9 +132,6 @@ def handle_internal_error(e):
     return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
 
-
-
-# --- 研究室API ---
 # --- ログインAPI（JWT発行） ---
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
@@ -143,7 +140,8 @@ def login():
     password = data.get('password')
     user = User.query.filter_by(email=email).first()
     if not user or user.password != password:
-        return jsonify({'error': '認証に失敗しました'}), 401
+        from werkzeug.exceptions import Unauthorized
+        raise Unauthorized('認証に失敗しました')
     access_token = create_access_token(identity={
         'user_id': user.id,
         'email': user.email,
@@ -162,7 +160,8 @@ def role_required(roles):
             identity = get_jwt_identity()
             if identity and identity.get('role') in roles:
                 return fn(*args, **kwargs)
-            return jsonify({'error': '権限がありません'}), 403
+            from werkzeug.exceptions import Forbidden
+            raise Forbidden('権限がありません')
         return decorated
     return wrapper
 
@@ -220,7 +219,7 @@ def get_laboratories():
         "labs": labs_list
     })
 
-
+# --- 研究室API ---
 # 研究室新規作成API（DB連携）
 @app.route('/api/v1/laboratories', methods=['POST'])
 def create_laboratory():
@@ -228,11 +227,11 @@ def create_laboratory():
     required = ["lab_name", "teacher_name", "capacity", "field_tag"]
     for key in required:
         if key not in data:
-            return jsonify({"error": {"code": "VALIDATION_ERROR", "message": f"{key}は必須です"}}), 400
+            raise ValidationError(f"{key}は必須です")
     if not isinstance(data["capacity"], int) or data["capacity"] < 1:
-        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "capacityは1以上の整数で入力してください"}}), 400
+        raise ValidationError("capacityは1以上の整数で入力してください")
     if Laboratory.query.filter_by(lab_name=data["lab_name"]).first():
-        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "研究室名は既に存在します"}}), 400
+        raise ValidationError("研究室名は既に存在します")
     # --- OpenAPI仕様雛形（Swagger UI等で利用可） ---
     # from flask_swagger_ui import get_swaggerui_blueprint
     # SWAGGER_URL = '/swagger'
@@ -264,7 +263,8 @@ def create_laboratory():
 def delete_laboratory(lab_id):
     lab = Laboratory.query.filter_by(lab_id=lab_id).first()
     if not lab:
-        return jsonify({"error": {"code": "NOT_FOUND", "message": "研究室が見つかりません"}}), 404
+        from werkzeug.exceptions import NotFound
+        raise NotFound("研究室が見つかりません")
     db.session.delete(lab)
     db.session.commit()
     return jsonify({"message": f"{lab.lab_name} を削除しました"})
@@ -297,9 +297,6 @@ def get_students():
         "per_page": per_page,
         "students": students_list
     })
-
-
-
 
 # --- 学生新規登録API ---
 @app.route('/api/v1/students', methods=['POST'])
