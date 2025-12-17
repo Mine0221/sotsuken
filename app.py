@@ -67,7 +67,6 @@ class Student(db.Model):
     assigned_lab = db.Column(db.String(16), db.ForeignKey('laboratories.lab_id'))
     satisfaction = db.Column(db.Integer, nullable=True)  # 納得度
     preferences = db.relationship('Preference', backref='student', lazy='joined')
-    preferences = db.relationship('Preference', backref='student', lazy='joined')
 
 class Preference(db.Model):
     __tablename__ = 'preferences'
@@ -359,7 +358,8 @@ def get_student_preferences(student_id):
 def get_student_assignment(student_id):
     student = Student.query.filter_by(student_id=student_id).first()
     if not student:
-        return jsonify({"error": {"code": "NOT_FOUND", "message": "学生が見つかりません"}}), 404
+        from werkzeug.exceptions import NotFound
+        raise NotFound("学生が見つかりません")
     return jsonify({
         "student_id": student.student_id,
         "assigned_lab": student.assigned_lab,
