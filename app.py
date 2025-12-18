@@ -286,13 +286,18 @@ def request_password_reset():
         from werkzeug.exceptions import NotFound
         raise NotFound('ユーザーが見つかりません')
     # JWTトークンをリセット用に発行（有効期限10分）
-    reset_token = create_access_token(identity={'user_id': user.id, 'email': user.email}, expires_delta=datetime.timedelta(minutes=10))
+    reset_token = create_access_token(
+        identity=str(user.id),  # user.idをstrでidentityに
+        additional_claims={'email': user.email},
+        expires_delta=datetime.timedelta(minutes=10)
+    )
     # 本来はメール送信だが、今回はAPIで返却
     return jsonify({'reset_token': reset_token, 'message': 'パスワードリセット用トークンを発行しました'})
 
 # パスワードリセット実行API
 @app.route('/api/v1/auth/reset_password', methods=['POST'])
 def reset_password():
+    import sys
     data = request.json
     reset_token = data.get('reset_token')
     new_password = data.get('new_password')
@@ -300,24 +305,12 @@ def reset_password():
         raise ValidationError('reset_tokenとnew_passwordは必須です')
     try:
         decoded = decode_token(reset_token)
-        print("DECODED PAYLOAD:", decoded)
-        import sys
-        sys.stdout.flush()
-        # payloadのどこにuser_idが入っているか柔軟に対応
-        user_id = None
-        if 'sub' in decoded and isinstance(decoded['sub'], dict) and 'user_id' in decoded['sub']:
-            user_id = decoded['sub']['user_id']
-        elif 'identity' in decoded and isinstance(decoded['identity'], dict) and 'user_id' in decoded['identity']:
-            user_id = decoded['identity']['user_id']
-        elif 'user_id' in decoded:
-            user_id = decoded['user_id']
+        user_id = decoded.get('sub')  # identityがsubに入る
+        if user_id is not None:
+            user_id = int(user_id)
         if not user_id:
-            print("NO USER_ID FOUND IN PAYLOAD:", decoded)
-            sys.stdout.flush()
             raise Exception('user_id not found in token')
     except Exception as e:
-        print("EXCEPTION OCCURRED. LAST DECODED PAYLOAD (if any):", locals().get('decoded', None))
-        sys.stdout.flush()
         from werkzeug.exceptions import Unauthorized
         raise Unauthorized('トークンが不正または期限切れです')
     user = User.query.filter_by(id=user_id).first()
