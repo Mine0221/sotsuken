@@ -132,13 +132,49 @@ def handle_internal_error(e):
 
 
 # --- ログインAPI（JWT発行） ---
+
+# --- ユーザ登録API ---
+@app.route('/api/v1/auth/register', methods=['POST'])
+def register_user():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    role = data.get('role')
+    student_id = data.get('student_id')
+    # 必須項目チェック
+    if not email or not password or not role:
+        raise ValidationError('email, password, roleは必須です')
+    # email重複チェック
+    if User.query.filter_by(email=email).first():
+        raise ValidationError('このemailは既に登録されています')
+    # role値検証
+    allowed_roles = ['student', 'teacher', 'admin']
+    if role not in allowed_roles:
+        raise ValidationError(f"roleは{allowed_roles}のいずれかで指定してください")
+    # studentロールの場合はstudent_id必須
+    if role == 'student':
+        if not student_id:
+            raise ValidationError('studentロールの場合はstudent_idが必須です')
+        # student_idが存在するかチェック
+        if not Student.query.filter_by(student_id=student_id).first():
+            raise ValidationError('指定されたstudent_idの学生が存在しません')
+    else:
+        student_id = None
+    # パスワードハッシュ化
+    hashed_password = generate_password_hash(password)
+    new_user = User(email=email, password=hashed_password, role=role, student_id=student_id)
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({'user_id': new_user.id, 'message': 'ユーザを登録しました'}), 201
+
+# --- ログインAPI（JWT発行） ---
 @app.route('/api/v1/auth/login', methods=['POST'])
 def login():
     data = request.json
     email = data.get('email')
     password = data.get('password')
     user = User.query.filter_by(email=email).first()
-    if not user or user.password != password:
+    if not user or not check_password_hash(user.password, password):
         from werkzeug.exceptions import Unauthorized
         raise Unauthorized('認証に失敗しました')
     access_token = create_access_token(identity={
