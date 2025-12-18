@@ -131,8 +131,6 @@ def handle_internal_error(e):
     return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
 
-# --- ログインAPI（JWT発行） ---
-
 # --- ユーザ登録API ---
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register_user():
