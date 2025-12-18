@@ -1,10 +1,9 @@
-
 # Flask本体とCORS（クロスオリジン対応）、SQLAlchemy、Flask-Migrateをインポート
 from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import BadRequest, Unauthorized
 # 認証用
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import datetime
@@ -130,6 +129,9 @@ def handle_not_found(e):
 def handle_internal_error(e):
     return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
+@app.errorhandler(Unauthorized)
+def handle_unauthorized(e):
+    return jsonify({"error": "Unauthorized", "message": str(e)}), 401
 
 # --- ユーザ登録API ---
 @app.route('/api/v1/auth/register', methods=['POST'])
@@ -298,9 +300,24 @@ def reset_password():
         raise ValidationError('reset_tokenとnew_passwordは必須です')
     try:
         decoded = decode_token(reset_token)
-        identity = decoded['sub'] if 'sub' in decoded else decoded['identity']
-        user_id = identity['user_id'] if isinstance(identity, dict) else identity
-    except Exception:
+        print("DECODED PAYLOAD:", decoded)
+        import sys
+        sys.stdout.flush()
+        # payloadのどこにuser_idが入っているか柔軟に対応
+        user_id = None
+        if 'sub' in decoded and isinstance(decoded['sub'], dict) and 'user_id' in decoded['sub']:
+            user_id = decoded['sub']['user_id']
+        elif 'identity' in decoded and isinstance(decoded['identity'], dict) and 'user_id' in decoded['identity']:
+            user_id = decoded['identity']['user_id']
+        elif 'user_id' in decoded:
+            user_id = decoded['user_id']
+        if not user_id:
+            print("NO USER_ID FOUND IN PAYLOAD:", decoded)
+            sys.stdout.flush()
+            raise Exception('user_id not found in token')
+    except Exception as e:
+        print("EXCEPTION OCCURRED. LAST DECODED PAYLOAD (if any):", locals().get('decoded', None))
+        sys.stdout.flush()
         from werkzeug.exceptions import Unauthorized
         raise Unauthorized('トークンが不正または期限切れです')
     user = User.query.filter_by(id=user_id).first()
