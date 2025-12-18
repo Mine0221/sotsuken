@@ -198,6 +198,7 @@ def role_required(roles):
         return decorated
     return wrapper
 
+
 # 例: 管理者のみアクセス可能なAPI
 @app.route('/api/v1/admin/secure', methods=['GET'])
 @role_required(['admin'])
@@ -253,6 +254,19 @@ def get_laboratories():
         "per_page": per_page,
         "labs": labs_list
     })
+
+# --- 管理者用ユーザ削除API ---
+@app.route('/api/v1/admin/users/<int:user_id>', methods=['DELETE'])
+@role_required(['admin'])
+def delete_user(user_id):
+    user = User.query.filter_by(id=user_id).first()
+    if not user:
+        from werkzeug.exceptions import NotFound
+        raise NotFound('ユーザーが見つかりません')
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': f"ユーザー（ID: {user_id}）を削除しました"})
+
 
 # --- パスワードリセットAPI ---
 from werkzeug.security import generate_password_hash, check_password_hash
