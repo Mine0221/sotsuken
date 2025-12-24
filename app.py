@@ -1,13 +1,18 @@
+
+
+
 # Flask本体とCORS（クロスオリジン対応）、SQLAlchemy、Flask-Migrateをインポート
 from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from werkzeug.exceptions import BadRequest, Unauthorized
+from werkzeug.exceptions import BadRequest, Unauthorized, UnprocessableEntity, Forbidden
 # 認証用
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import datetime
 
+# JWTエラー用ハンドラ追加
+from flask_jwt_extended.exceptions import JWTExtendedException
 
 
 # Flaskアプリケーション初期化
@@ -18,6 +23,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sotsuken.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # JWT設定
 app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # 本番は安全な値に変更
+app.config['JWT_TOKEN_LOCATION'] = ['headers']
 # SQLAlchemy初期化
 db = SQLAlchemy(app)
 # Flask-Migrate初期化
@@ -133,7 +139,17 @@ def handle_internal_error(e):
 def handle_unauthorized(e):
     return jsonify({"error": "Unauthorized", "message": str(e)}), 401
 
+
+@app.errorhandler(JWTExtendedException)
+def handle_jwt_errors(e):
+    return jsonify({"error": "JWT Error", "message": str(e)}), 401
+
+
+
 # --- ユーザ登録API ---
+@app.errorhandler(Forbidden)
+def handle_forbidden(e):
+    return jsonify({"error": "Forbidden", "message": str(e)}), 403
 @app.route('/api/v1/auth/register', methods=['POST'])
 def register_user():
     data = request.json
@@ -186,19 +202,23 @@ def login():
     return jsonify({'access_token': access_token, 'role': user.role})
 
 # --- 認証保護・権限制御のサンプルAPI ---
+from functools import wraps
 def role_required(roles):
-    def wrapper(fn):
-        from functools import wraps
+    def decorator(fn):
         @wraps(fn)
-        @jwt_required()
-        def decorated(*args, **kwargs):
+        def wrapper(*args, **kwargs):
             identity = get_jwt_identity()
-            if identity and identity.get('role') in roles:
-                return fn(*args, **kwargs)
-            from werkzeug.exceptions import Forbidden
-            raise Forbidden('権限がありません')
-        return decorated
-    return wrapper
+            if not identity:
+                raise Unauthorized('認証情報が不正です')
+            if identity.get('role') not in roles:
+                raise Forbidden('権限がありません')
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+# 422 Unprocessable Entity handler
+@app.errorhandler(UnprocessableEntity)
+def handle_unprocessable_entity(e):
+    return jsonify({"error": "Unprocessable Entity", "message": str(e)}), 422
 
 
 # 例: 管理者のみアクセス可能なAPI
@@ -258,7 +278,9 @@ def get_laboratories():
     })
 
 # --- 管理者用ユーザ削除API ---
+
 @app.route('/api/v1/admin/users/<int:user_id>', methods=['DELETE'])
+@jwt_required()
 @role_required(['admin'])
 def delete_user(user_id):
     user = User.query.filter_by(id=user_id).first()
@@ -267,7 +289,7 @@ def delete_user(user_id):
         raise NotFound('ユーザーが見つかりません')
     db.session.delete(user)
     db.session.commit()
-    return jsonify({'message': f"ユーザー（ID: {user_id}）を削除しました"})
+    return jsonify({'message': f"ユーザー（ID: {user_id}）を削除しました"}), 200
 
 
 # --- パスワードリセットAPI ---
