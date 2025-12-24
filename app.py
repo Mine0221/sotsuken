@@ -558,8 +558,9 @@ def set_preferences():
 
 
 # --- マッチングAPI ---
-# マッチング実行API（管理者用）
 @app.route('/api/v1/admin/matching/run', methods=['POST'])
+@jwt_required()
+@role_required(['admin'])
 def run_matching():
     # --- DBからデータ取得 ---
     students = Student.query.all()
@@ -622,11 +623,54 @@ def get_matching_results():
 
 
 # --- インポートAPI ---
-# 学生データCSVインポートAPI（管理者用・ダミー）
+
+# 学生データCSVインポートAPI（管理者用・本実装）
+import csv
+from io import TextIOWrapper
+from flask_jwt_extended import jwt_required
+
 @app.route('/api/v1/admin/students/import', methods=['POST'])
+@jwt_required()
+@role_required(['admin'])
 def import_students():
-    # ファイル処理は省略（本来はCSVを受け取りDBに登録）
-    return jsonify({"imported": 0, "errors": [{"row": 12, "error": "学籍番号が重複しています"}]})
+    if 'file' not in request.files:
+        raise ValidationError('fileパラメータ（CSVファイル）が必要です')
+    file = request.files['file']
+    if not file.filename.endswith('.csv'):
+        raise ValidationError('CSVファイルのみ対応しています')
+    # 文字コード自動判定も可だが、今回はutf-8前提
+    stream = TextIOWrapper(file.stream, encoding='utf-8')
+    reader = csv.DictReader(stream)
+    required_cols = {'student_id', 'name', 'email', 'gpa'}
+    if set(reader.fieldnames) != required_cols:
+        raise ValidationError(f'CSVのカラムは {required_cols} のみ許可されています')
+    imported = 0
+    errors = []
+    for idx, row in enumerate(reader, start=2):  # 2行目=データ1行目
+        sid = row.get('student_id', '').strip()
+        name = row.get('name', '').strip()
+        email = row.get('email', '').strip()
+        gpa_str = row.get('gpa', '').strip()
+        # 重複チェック（student_idのみ先に）
+        if sid and Student.query.filter_by(student_id=sid).first():
+            errors.append({"row": idx, "error": "student_idが既に存在します"})
+            continue
+        # 必須チェック
+        if not sid or not name or not email or not gpa_str:
+            errors.append({"row": idx, "error": "全カラム必須です"})
+            continue
+        # GPA数値チェック
+        try:
+            gpa = float(gpa_str)
+        except ValueError:
+            errors.append({"row": idx, "error": "gpaは数値で入力してください"})
+            continue
+        # 登録
+        student = Student(student_id=sid, name=name, email=email, gpa=gpa)
+        db.session.add(student)
+        imported += 1
+    db.session.commit()
+    return jsonify({"imported": imported, "errors": errors})
 
 
 # --- バックアップAPI ---
